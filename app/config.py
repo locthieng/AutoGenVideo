@@ -41,6 +41,8 @@ OPENAI_TEXT_MODEL = env("OPENAI_TEXT_MODEL", "gpt-4.1-mini")
 
 IMAGE_CONCURRENCY = max(1, int(env("IMAGE_CONCURRENCY", "3") or 3))
 PORT = int(env("PORT", "8000") or 8000)
+# Thời lượng hiện ảnh thumbnail ở đầu video (giây)
+THUMB_SECONDS = max(0.0, float(env("THUMB_SECONDS", "0.5") or 0.5))
 
 VOICES = [
     ("en-US-AndrewMultilingualNeural", "Andrew (Nam, US) - ấm, kể chuyện"),

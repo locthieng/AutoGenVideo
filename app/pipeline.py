@@ -110,6 +110,11 @@ def scene_image(pdir: Path, i: int) -> Path | None:
     return None
 
 
+def thumb_image(pdir: Path) -> Path | None:
+    p = pdir / "thumb.jpg"
+    return p if p.exists() else None
+
+
 def project_info(pid: str) -> dict:
     """Thông tin project cho giao diện: cảnh, prompt, ảnh đã có, video."""
     pdir = project_dir(pid)
@@ -125,8 +130,11 @@ def project_info(pid: str) -> dict:
         video_url = f"/output/{video}?v={mt}"
     else:
         video_url = ""
+    th = thumb_image(pdir)
+    thumb_url = f"/output/{pid}/{th.name}?v={int(th.stat().st_mtime)}" if th else ""
     return {"id": pid, "title": data.get("title", pid), "mode": data["options"].get("mode", "auto"),
-            "options": data["options"], "scenes": scenes, "video": video_url}
+            "options": data["options"], "scenes": scenes, "video": video_url, "thumbnail": thumb_url,
+            "thumb_seconds": config.THUMB_SECONDS}
 
 
 def save_scene_image(pid: str, i: int, data: bytes) -> str:
@@ -138,6 +146,16 @@ def save_scene_image(pid: str, i: int, data: bytes) -> str:
         (pdir / "images" / f"{i:02d}{ext}").unlink(missing_ok=True)
     out = images.save_upload(data, pdir / "images" / f"{i:02d}.jpg")
     return f"/output/{pid}/images/{out.name}?v={int(out.stat().st_mtime)}"
+
+
+def save_thumbnail(pid: str, data: bytes) -> str:
+    pdir = project_dir(pid)
+    out = images.save_upload(data, pdir / "thumb.jpg")
+    return f"/output/{pid}/{out.name}?v={int(out.stat().st_mtime)}"
+
+
+def delete_thumbnail(pid: str) -> None:
+    (project_dir(pid) / "thumb.jpg").unlink(missing_ok=True)
 
 
 def update_prompt(pid: str, i: int, prompt: str) -> None:
@@ -334,8 +352,11 @@ def step_render(job: Job, pdir: Path, o: JobOptions, p0: float) -> Path:
     def prog(p: float) -> None:
         job.progress = p_render + (1.0 - p_render) * p
 
+    thumb = thumb_image(pdir)
+    if thumb:
+        job.log(f"🖼️ Chèn thumbnail {config.THUMB_SECONDS:g}s ở đầu video")
     render.render_video(pdir, [p for p in img_paths if p], voice_wav, durations, subs_path, font_file, out,
-                        music, o.music_volume, prog)
+                        music, o.music_volume, prog, thumb=thumb, thumb_seconds=config.THUMB_SECONDS)
 
     proj["video"] = out.relative_to(config.OUTPUT_DIR).as_posix()
     proj["options"] = {k: v for k, v in asdict(o).items() if k != "script"}

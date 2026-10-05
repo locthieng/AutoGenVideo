@@ -1,11 +1,13 @@
 """Web server: mở http://localhost:8000, dán kịch bản và bấm Tạo video."""
 from __future__ import annotations
 
+import sys
 import webbrowser
 from threading import Timer
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.staticfiles import StaticFiles
@@ -15,6 +17,14 @@ from .pipeline import JOBS, JobOptions
 from .script_splitter import split_scenes
 
 app = FastAPI(title="AI Shorts Maker")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class NoCacheStatic(StaticFiles):
@@ -145,6 +155,28 @@ async def upload_image(pid: str, index: int, request: Request):
         _err(e)
 
 
+@app.post("/api/projects/{pid}/thumbnail")
+async def upload_thumbnail(pid: str, request: Request):
+    data = await request.body()
+    if not data:
+        raise HTTPException(400, "Không có dữ liệu ảnh")
+    if len(data) > 40 * 1024 * 1024:
+        raise HTTPException(400, "Ảnh quá lớn (>40MB)")
+    try:
+        return {"thumbnail": pipeline.save_thumbnail(pid, data)}
+    except Exception as e:
+        _err(e)
+
+
+@app.delete("/api/projects/{pid}/thumbnail")
+def delete_thumbnail(pid: str):
+    try:
+        pipeline.delete_thumbnail(pid)
+        return {"ok": True}
+    except Exception as e:
+        _err(e)
+
+
 @app.put("/api/projects/{pid}/prompts/{index}")
 def edit_prompt(pid: str, index: int, req: PromptReq):
     try:
@@ -163,11 +195,34 @@ def render_project(pid: str, req: RenderReq):
         _err(e)
 
 
+def _disable_quick_edit():
+    """Tắt chế độ QuickEdit trên Windows Console để tránh việc người dùng bấm chuột vào màn hình đen làm treo/pause server."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            hStdin = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+            mode = ctypes.c_ulong()
+            if kernel32.GetConsoleMode(hStdin, ctypes.byref(mode)):
+                # ENABLE_QUICK_EDIT_MODE = 0x0040, ENABLE_EXTENDED_FLAGS = 0x0080
+                new_mode = (mode.value & ~0x0040) | 0x0080
+                kernel32.SetConsoleMode(hStdin, new_mode)
+        except Exception:
+            pass
+
+
 def main():
-    url = f"http://localhost:{config.PORT}"
-    print(f"\n  AI Shorts Maker dang chay tai: {url}\n  (Nhan Ctrl+C de tat)\n", flush=True)
+    _disable_quick_edit()
+    url = f"http://127.0.0.1:{config.PORT}"
+    print("\n" + "=" * 65)
+    print(f"  AI Shorts Maker dang chay tai: {url}")
+    print("  [LUU Y QUAN TRONG]")
+    print("  - KHONG DUOC DONG/TAT CUA SO NAY TRONG SUOT QUA TRINH DUNG!")
+    print("  - Neu dong cua so nay, giao dien web se bi loi: 'Failed to fetch'")
+    print("  - Nhan Ctrl+C de dung server khi khong dung nua.")
+    print("=" * 65 + "\n", flush=True)
     Timer(1.5, lambda: webbrowser.open(url)).start()
-    uvicorn.run(app, host="127.0.0.1", port=config.PORT, log_level="warning")
+    uvicorn.run(app, host="0.0.0.0", port=config.PORT, log_level="info")
 
 
 if __name__ == "__main__":

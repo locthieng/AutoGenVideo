@@ -83,7 +83,8 @@ def pick_effects(n: int) -> list[str]:
 
 def render_video(job_dir: Path, images: list[Path], voice_wav: Path, durations: list[float],
                  subs_ass: Path, font_file: Path, out_path: Path, music: Path | None,
-                 music_volume: float, progress: Callable[[float], None]) -> Path:
+                 music_volume: float, progress: Callable[[float], None],
+                 thumb: Path | None = None, thumb_seconds: float = 0.0) -> Path:
     fps = config.FPS
     w, h = config.WIDTH, config.HEIGHT
 
@@ -99,6 +100,11 @@ def render_video(job_dir: Path, images: list[Path], voice_wav: Path, durations: 
         frames.append(round((t + d) * fps) - round(t * fps))
         t += d
     total = sum(durations)
+
+    # thumbnail: ảnh tĩnh ở đầu video, giọng đọc + phụ đề lùi lại tương ứng
+    thumb_frames = round(thumb_seconds * fps) if thumb and thumb_seconds > 0 else 0
+    lead = thumb_frames / fps
+    total_out = total + lead
 
     effects = pick_effects(len(images))
     inputs: list[str] = []
@@ -117,16 +123,39 @@ def render_video(job_dir: Path, images: list[Path], voice_wav: Path, durations: 
     inputs += ["-i", voice_wav.relative_to(job_dir).as_posix()]
     concat_in = "".join(f"[v{i}]" for i in range(n))
     filters.append(f"{concat_in}concat=n={n}:v=1:a=0[vc]")
-    filters.append(f"[vc]subtitles={subs_ass.relative_to(job_dir).as_posix()}:fontsdir=fonts[vout]")
+    subs_label = "[vsub]" if thumb_frames else "[vout]"
+    filters.append(f"[vc]subtitles={subs_ass.relative_to(job_dir).as_posix()}:fontsdir=fonts{subs_label}")
 
+    next_in = vi + 1
     if music:
         inputs += ["-stream_loop", "-1", "-i", str(music)]
+        mi = next_in
+        next_in += 1
+
+    if thumb_frames:
+        ti = next_in
+        inputs += ["-framerate", str(fps), "-loop", "1", "-i", thumb.relative_to(job_dir).as_posix()]
         filters.append(
-            f"[{vi + 1}:a]volume={music_volume},atrim=0:{total:.3f},"
-            f"afade=t=out:st={max(0.0, total - 1.5):.3f}:d=1.5[m]"
+            f"[{ti}:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,"
+            f"trim=end_frame={thumb_frames},setpts=PTS-STARTPTS,"
+            f"scale=out_range=tv,setsar=1,format=yuv420p[vt]"
         )
-        filters.append(f"[{vi}:a][m]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]")
+        filters.append("[vt][vsub]concat=n=2:v=1:a=0[vout]")
+        ms = round(lead * 1000)
+        filters.append(f"[{vi}:a]adelay={ms}|{ms}[va]")
+        voice = "[va]"
+    else:
+        voice = f"[{vi}:a]"
+
+    if music:
+        filters.append(
+            f"[{mi}:a]volume={music_volume},atrim=0:{total_out:.3f},"
+            f"afade=t=out:st={max(0.0, total_out - 1.5):.3f}:d=1.5[m]"
+        )
+        filters.append(f"{voice}[m]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[aout]")
         amap = "[aout]"
+    elif thumb_frames:
+        amap = "[va]"
     else:
         amap = f"{vi}:a"
 
@@ -135,7 +164,7 @@ def render_video(job_dir: Path, images: list[Path], voice_wav: Path, durations: 
         "-filter_complex", ";".join(filters),
         "-map", "[vout]", "-map", amap,
         "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(fps),
-        "-c:a", "aac", "-b:a", "192k", "-t", f"{total:.3f}",
+        "-c:a", "aac", "-b:a", "192k", "-t", f"{total_out:.3f}",
         "-movflags", "+faststart", "-progress", "pipe:1", "-nostats",
         out_path.relative_to(job_dir).as_posix(),
     ]
@@ -148,7 +177,7 @@ def render_video(job_dir: Path, images: list[Path], voice_wav: Path, durations: 
         if line.startswith("out_time_us=") or line.startswith("out_time_ms="):
             try:
                 us = int(line.split("=", 1)[1])
-                progress(min(1.0, us / 1_000_000 / total))
+                progress(min(1.0, us / 1_000_000 / total_out))
             except ValueError:
                 pass
     stderr = proc.stderr.read() if proc.stderr else ""

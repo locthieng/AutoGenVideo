@@ -93,6 +93,9 @@
   .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #000d; padding: 10px 18px;
            border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 10; }
   .toast.show { opacity: 1; }
+  .thumb-card { max-width: 680px; margin-bottom: 14px; border-style: dashed; border-color: var(--accent2); }
+  .thumb-card.selected { border-style: solid; }
+  .thumb-card .slot .badge { background: var(--accent2); color: #000; }
   .guide { font-size: 13px; color: var(--muted); line-height: 1.6; margin: 0 0 12px; padding-left: 18px; }
   .guide b { color: var(--text); }
 </style>
@@ -194,6 +197,17 @@
       <li>Đủ ảnh thì bấm <b>🎬 Dựng video</b>. Muốn đổi ảnh nào thì thay rồi dựng lại.</li>
     </ol>
     <div class="bulk" id="bulk">📥 Kéo <b>nhiều ảnh cùng lúc</b> vào đây: tự xếp vào các cảnh còn trống theo thứ tự đã tải về</div>
+    <div class="sc thumb-card" id="thumbCard" title="Bấm để chọn ảnh, kéo thả, hoặc bấm chọn ô này rồi Ctrl+V">
+      <div class="slot" id="thumbSlot"></div>
+      <div class="sc-body">
+        <div class="sc-text"><b>🖼️ Thumbnail (ảnh bìa)</b></div>
+        <div class="hint" id="thumbHint" style="margin-top:0"></div>
+        <div class="sc-actions">
+          <button class="btn-sec" id="thumbPick">📂 Chọn ảnh</button>
+          <button class="btn-sec" id="thumbDel" style="display:none">🗑️ Xóa thumbnail</button>
+        </div>
+      </div>
+    </div>
     <div class="grid" id="grid"></div>
   </section>
 </main>
@@ -204,12 +218,18 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let polling = null, mode = "manual", OPTS = null, project = null, selected = -1;
+const THUMB = -2;  // selected === THUMB -> đang chọn ô thumbnail
 
 async function api(path, body, method) {
   const init = body === undefined ? {} : (body instanceof Blob
     ? { method: method || "POST", body }
     : { method: method || "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const res = await fetch(path, init);
+  let res;
+  try {
+    res = await fetch(path, init);
+  } catch (err) {
+    throw new Error("Không thể kết nối đến server (Failed to fetch). Hãy kiểm tra xem cửa sổ đen (run.bat) có đang mở không, không được tắt cửa sổ đó!");
+  }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
   return res.json();
 }
@@ -284,9 +304,11 @@ function updateStats() {
   clearTimeout(splitTimer);
   splitTimer = setTimeout(async () => {
     if (!text) { $("sc").textContent = 0; return; }
-    const r = await api("/api/split", { script: text });
-    $("sc").textContent = r.scenes.length;
-    if ($("scenesPreview").childElementCount) renderPreview(r.scenes);
+    try {
+      const r = await api("/api/split", { script: text });
+      $("sc").textContent = r.scenes.length;
+      if ($("scenesPreview").childElementCount) renderPreview(r.scenes);
+    } catch {}
   }, 400);
 }
 function renderPreview(scenes) {
@@ -374,6 +396,7 @@ async function openProject(pid, scroll) {
   $("wsGuide").style.display = project.mode === "manual" ? "" : "none";
   selected = -1;
   renderGrid();
+  renderThumb();
   if (project.video && !$("result").querySelector("video")) {
     $("idle").style.display = "none"; $("jobBox").style.display = "block";
     $("step").textContent = "Video của dự án"; $("pct").textContent = ""; $("bar").style.width = "100%"; $("logs").textContent = "";
@@ -418,7 +441,8 @@ function renderGrid() {
 
 function select(i) {
   selected = i;
-  document.querySelectorAll(".sc").forEach((c, k) => c.classList.toggle("selected", k === i));
+  document.querySelectorAll("#grid .sc").forEach((c, k) => c.classList.toggle("selected", k === i));
+  $("thumbCard").classList.toggle("selected", i === THUMB);
 }
 
 async function copyText(t) {
@@ -453,11 +477,57 @@ bulk.ondragover = (e) => { e.preventDefault(); bulk.classList.add("drag"); };
 bulk.ondragleave = () => bulk.classList.remove("drag");
 bulk.ondrop = (e) => { e.preventDefault(); bulk.classList.remove("drag"); bulkUpload(e.dataTransfer.files); };
 
+// ---------------------------------------------------------------- thumbnail
+function renderThumb() {
+  const has = !!project.thumbnail;
+  const slot = $("thumbSlot");
+  slot.className = "slot" + (has ? " has" : "");
+  slot.innerHTML = `<span class="badge">THUMB</span>` +
+    (has ? `<img src="${project.thumbnail}">` : `<span>🖼️<br>Kéo thả / bấm chọn ảnh<br>hoặc Ctrl+V</span>`);
+  $("thumbDel").style.display = has ? "" : "none";
+  $("thumbHint").innerHTML = has
+    ? `✅ Thumbnail sẽ hiện <b>${project.thumb_seconds}s</b> ở đầu video. Khi đăng Shorts, chọn khung hình đầu tiên làm ảnh bìa. Nhớ bấm <b>🎬 Dựng video</b> lại để áp dụng.`
+    : `Không bắt buộc. Thêm ảnh này thì video sẽ mở đầu bằng thumbnail (${project.thumb_seconds}s), sau đó mới vào cảnh 1.`;
+  $("thumbCard").classList.toggle("selected", selected === THUMB);
+}
+function pickThumb() {
+  select(THUMB);
+  $("filePick").onchange = ev => { if (ev.target.files[0]) uploadThumb(ev.target.files[0]); ev.target.value = ""; };
+  $("filePick").click();
+}
+async function uploadThumb(file) {
+  if (!project) return;
+  try {
+    const r = await api(`/api/projects/${project.id}/thumbnail`, file);
+    project.thumbnail = r.thumbnail;
+    renderThumb();
+    toast("✅ Đã thêm thumbnail");
+  } catch (e) { alert("Lỗi tải thumbnail: " + e.message); }
+}
+const thumbCard = $("thumbCard");
+thumbCard.onclick = () => select(THUMB);
+$("thumbSlot").onclick = (e) => { e.stopPropagation(); pickThumb(); };
+$("thumbPick").onclick = (e) => { e.stopPropagation(); pickThumb(); };
+$("thumbDel").onclick = async (e) => {
+  e.stopPropagation();
+  if (!project || !confirm("Xóa thumbnail của dự án này?")) return;
+  try {
+    const res = await fetch(`/api/projects/${project.id}/thumbnail`, { method: "DELETE" });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+    project.thumbnail = ""; renderThumb(); toast("🗑️ Đã xóa thumbnail");
+  } catch (err) { alert("Lỗi: " + err.message); }
+};
+thumbCard.ondragover = (e) => { e.preventDefault(); e.stopPropagation(); thumbCard.classList.add("drag"); };
+thumbCard.ondragleave = () => thumbCard.classList.remove("drag");
+thumbCard.ondrop = (e) => { e.preventDefault(); e.stopPropagation(); thumbCard.classList.remove("drag");
+  const f = [...e.dataTransfer.files].find(f => f.type.startsWith("image/")); if (f) uploadThumb(f); };
+
 document.addEventListener("paste", (e) => {
   if (!project || $("workspace").style.display === "none") return;
   const item = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith("image/"));
   if (!item) return;
   e.preventDefault();
+  if (selected === THUMB) { uploadThumb(item.getAsFile()); return; }
   let i = selected;
   if (i < 0) i = project.scenes.findIndex(s => !s.image);
   if (i < 0) { toast("Hãy bấm chọn cảnh muốn thay ảnh trước"); return; }
