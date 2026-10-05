@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Shorts Maker</title>
+<style>
+  :root {
+    --bg: #0e0f13; --panel: #171920; --panel2: #1f222b; --border: #2a2e39;
+    --text: #e8e9ee; --muted: #8b90a0; --accent: #ff3b5c; --accent2: #ffcc00; --ok: #2ecc71; --blue: #4c8dff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 16px 28px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header .logo { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; font-weight: 800; }
+  main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 22px; padding: 22px 28px; max-width: 1500px; margin: auto; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+  .full { grid-column: 1 / -1; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+  .card h2 { margin: 0 0 14px; font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+  textarea, input, select { width: 100%; background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 9px; padding: 10px 12px; font: inherit; font-size: 14px; }
+  textarea:focus, input:focus, select:focus { outline: none; border-color: var(--accent); }
+  #script { min-height: 230px; resize: vertical; line-height: 1.5; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .stats { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 6px; align-items: center; flex-wrap: wrap; }
+  .stats b { color: var(--text); }
+  button { cursor: pointer; border: 0; border-radius: 10px; font: inherit; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-main { width: 100%; margin-top: 18px; padding: 14px; font-size: 16px; background: var(--accent); color: #fff; }
+  .btn-sec { padding: 8px 12px; background: var(--panel2); color: var(--text); border: 1px solid var(--border); font-size: 13px; }
+  .btn-sec:hover { border-color: var(--accent); }
+  .btn-ok { padding: 10px 18px; background: var(--ok); color: #04210f; font-size: 15px; }
+  details { margin-top: 14px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: var(--text); }
+  .check input { width: auto; }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 6px; }
+  .tab { padding: 12px; border-radius: 11px; border: 2px solid var(--border); background: var(--panel2); text-align: left; color: var(--text); }
+  .tab b { display: block; font-size: 14px; }
+  .tab small { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .tab.active { border-color: var(--accent); background: #2a1820; }
+  .banner { border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-top: 10px; line-height: 1.5; }
+  .banner.warn { background: #3a2a0c; border: 1px solid #6b4f12; }
+  .banner.good { background: #0f2e1d; border: 1px solid #1e6b40; }
+  .banner code { background: #0006; padding: 1px 6px; border-radius: 5px; }
+  .progress { height: 10px; background: var(--panel2); border-radius: 99px; overflow: hidden; margin: 10px 0; }
+  .progress > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .4s; }
+  .step { font-weight: 600; }
+  .logs { background: #0a0b0e; border-radius: 9px; padding: 10px; font-family: Consolas, monospace; font-size: 12px;
+          max-height: 170px; overflow: auto; white-space: pre-wrap; color: #b9bdc9; margin-top: 10px; }
+  video { width: 100%; max-height: 620px; background: #000; border-radius: 12px; margin-top: 12px; }
+  .scenes-preview { margin-top: 10px; max-height: 200px; overflow: auto; }
+  .scene-line { font-size: 13px; padding: 7px 10px; border-left: 3px solid var(--accent); background: var(--panel2); border-radius: 6px; margin-bottom: 6px; }
+  .scene-line span { color: var(--muted); margin-right: 6px; }
+  .history a { display: flex; justify-content: space-between; gap: 8px; color: var(--text); text-decoration: none; padding: 8px 10px;
+               border-radius: 8px; font-size: 13px; border: 1px solid var(--border); margin-bottom: 6px; cursor: pointer; }
+  .history a:hover { border-color: var(--accent); }
+  .history small { color: var(--muted); white-space: nowrap; }
+  .err { color: #ff6b81; }
+  .ok { color: var(--ok); }
+  .dl { display: inline-block; margin-top: 10px; padding: 10px 16px; background: var(--ok); color: #04210f; border-radius: 9px; text-decoration: none; font-weight: 700; }
+  .right { display: flex; flex-direction: column; gap: 22px; }
+
+  /* workspace */
+  .ws-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .ws-head h3 { margin: 0; font-size: 17px; margin-right: auto; }
+  .count { font-size: 13px; color: var(--muted); }
+  .count b { color: var(--text); }
+  .bulk { border: 2px dashed var(--border); border-radius: 12px; padding: 14px; text-align: center; color: var(--muted);
+          font-size: 13px; margin-bottom: 14px; cursor: pointer; }
+  .bulk.drag { border-color: var(--accent); color: var(--text); background: #2a1820; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+  .sc { background: var(--panel2); border: 2px solid var(--border); border-radius: 12px; padding: 12px; display: grid;
+        grid-template-columns: 112px 1fr; gap: 12px; }
+  .sc.selected { border-color: var(--blue); box-shadow: 0 0 0 3px #4c8dff33; }
+  .sc.drag { border-color: var(--accent); }
+  .slot { width: 112px; height: 199px; border-radius: 9px; background: #0a0b0e; border: 1px dashed var(--border);
+          display: grid; place-items: center; text-align: center; font-size: 11px; color: var(--muted); cursor: pointer;
+          overflow: hidden; position: relative; padding: 6px; }
+  .slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .slot .badge { position: absolute; top: 5px; left: 5px; background: var(--accent); color: #fff; font-weight: 700; font-size: 12px;
+                 border-radius: 6px; padding: 1px 7px; z-index: 1; }
+  .slot.has .badge { background: var(--ok); color: #04210f; }
+  .sc-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .sc-text { font-size: 13px; line-height: 1.4; }
+  .sc-body textarea { font-size: 12px; padding: 7px 9px; min-height: 92px; resize: vertical; color: #c9cddc; flex: 1; }
+  .sc-actions { display: flex; gap: 6px; }
+  .sc-actions button { padding: 6px 10px; font-size: 12px; }
+  .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #000d; padding: 10px 18px;
+           border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 10; }
+  .toast.show { opacity: 1; }
+  .guide { font-size: 13px; color: var(--muted); line-height: 1.6; margin: 0 0 12px; padding-left: 18px; }
+  .guide b { color: var(--text); }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">▶</div>
+  <h1>AI Shorts Maker</h1>
+  <span style="color:var(--muted);font-size:13px">Dán kịch bản → video Shorts có giọng đọc, phụ đề, ảnh AI</span>
+</header>
+
+<main>
+  <section class="card">
+    <h2>1. Chế độ</h2>
+    <div class="tabs">
+      <button class="tab" data-mode="manual"><b>🙌 Bán tự động (gói Gemini Pro)</b><small>Bạn tạo ảnh trên app Gemini, tool lo phần còn lại. Không tốn thêm tiền.</small></button>
+      <button class="tab" data-mode="auto"><b>⚡ Tự động (API key)</b><small>Tool tự tạo ảnh bằng API, tính phí theo ảnh.</small></button>
+    </div>
+    <div id="modeBanner"></div>
+
+    <h2 style="margin-top:20px">2. Kịch bản</h2>
+    <label for="title">Tên video (không bắt buộc)</label>
+    <input id="title" placeholder="vd: man who survived two atomic bombs">
+    <label for="script">Kịch bản tiếng Anh</label>
+    <textarea id="script" placeholder="This man survived two atomic bombs. And he lived to be 93 years old..."></textarea>
+    <div class="stats">
+      <span>Số từ: <b id="wc">0</b></span>
+      <span>Thời lượng ước tính: <b id="dur">0s</b></span>
+      <span>Số cảnh (ảnh): <b id="sc">0</b></span>
+      <button class="btn-sec" id="previewBtn" style="margin-left:auto;padding:4px 10px">Xem cách chia cảnh</button>
+    </div>
+    <div class="scenes-preview" id="scenesPreview"></div>
+
+    <h2 style="margin-top:20px">3. Tùy chọn</h2>
+    <div class="row">
+      <div><label for="voice">Giọng đọc</label><select id="voice"></select></div>
+      <div>
+        <label for="rate">Tốc độ đọc: <b id="rateVal">+10%</b></label>
+        <input id="rate" type="range" min="-20" max="40" step="5" value="10" style="padding:0;margin-top:12px">
+      </div>
+    </div>
+    <div class="row">
+      <div><label for="style">Phong cách hình ảnh</label><select id="style"></select></div>
+      <div id="providerBox"><label for="provider">Tạo ảnh bằng</label><select id="provider"></select></div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="music">Nhạc nền</label><select id="music"></select>
+        <div class="hint">Bỏ file .mp3 vào thư mục <code>assets/music</code></div>
+      </div>
+      <div>
+        <label for="wpc">Số từ mỗi dòng phụ đề</label>
+        <select id="wpc"><option value="1">1 từ</option><option value="2">2 từ</option>
+          <option value="3" selected>3 từ</option><option value="4">4 từ</option></select>
+      </div>
+    </div>
+    <details>
+      <summary>Tùy chỉnh nâng cao</summary>
+      <label for="customStyle">Phong cách tự viết (ghi đè lựa chọn ở trên)</label>
+      <input id="customStyle" placeholder="vd: dark fantasy oil painting, moody, golden light">
+      <label for="extra">Mô tả nhân vật / bối cảnh chính (giúp các ảnh đồng bộ)</label>
+      <input id="extra" placeholder="vd: main character is a Japanese man in his 30s wearing a 1940s suit">
+      <label for="musicVol">Âm lượng nhạc nền: <b id="musicVolVal">12%</b></label>
+      <input id="musicVol" type="range" min="0" max="40" value="12" style="padding:0">
+      <label class="check"><input type="checkbox" id="upper" checked> Phụ đề VIẾT HOA</label>
+    </details>
+
+    <button class="btn-main" id="go">🎬 Tạo video</button>
+  </section>
+
+  <section class="right">
+    <div class="card">
+      <h2>Tiến trình</h2>
+      <div id="idle" style="color:var(--muted);font-size:14px">Chưa có tác vụ nào.</div>
+      <div id="jobBox" style="display:none">
+        <div><span class="step" id="step">Đang chuẩn bị...</span> <span id="pct" style="color:var(--muted)"></span></div>
+        <div class="progress"><div id="bar"></div></div>
+        <div id="result"></div>
+        <div class="logs" id="logs"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Dự án gần đây</h2>
+      <div class="history" id="history"></div>
+    </div>
+  </section>
+
+  <section class="card full" id="workspace" style="display:none">
+    <div class="ws-head">
+      <h3 id="wsTitle">Dự án</h3>
+      <span class="count">Ảnh: <b id="wsCount">0/0</b></span>
+      <a class="btn-sec" href="https://gemini.google.com/app" target="_blank" style="text-decoration:none">🌐 Mở Gemini</a>
+      <button class="btn-sec" id="copyAll">📋 Copy tất cả mô tả</button>
+      <button class="btn-ok" id="renderBtn">🎬 Dựng video</button>
+    </div>
+    <ol class="guide" id="wsGuide">
+      <li>Bấm <b>📋 Copy</b> ở mỗi cảnh, dán vào <b>app Gemini</b> để tạo ảnh. Nên tạo tất cả trong <b>cùng 1 cuộc trò chuyện</b> để nhân vật giống nhau.</li>
+      <li>Đưa ảnh vào cảnh: <b>kéo thả</b> vào ô ảnh, <b>bấm vào ô</b> để chọn file, hoặc <b>bấm chọn cảnh rồi Ctrl+V</b> (copy ảnh từ Gemini bằng chuột phải → Sao chép hình ảnh).</li>
+      <li>Đủ ảnh thì bấm <b>🎬 Dựng video</b>. Muốn đổi ảnh nào thì thay rồi dựng lại.</li>
+    </ol>
+    <div class="bulk" id="bulk">📥 Kéo <b>nhiều ảnh cùng lúc</b> vào đây: tự xếp vào các cảnh còn trống theo thứ tự đã tải về</div>
+    <div class="grid" id="grid"></div>
+  </section>
+</main>
+<input type="file" id="filePick" accept="image/*" style="display:none">
+<input type="file" id="filePickMulti" accept="image/*" multiple style="display:none">
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let polling = null, mode = "manual", OPTS = null, project = null, selected = -1;
+
+async function api(path, body, method) {
+  const init = body === undefined ? {} : (body instanceof Blob
+    ? { method: method || "POST", body }
+    : { method: method || "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await fetch(path, init);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+  return res.json();
+}
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1800); }
+function opt(sel, value, text) { const o = document.createElement("option"); o.value = value; o.textContent = text; sel.appendChild(o); }
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+// ---------------------------------------------------------------- options & mode
+async function loadOptions() {
+  OPTS = await api("/api/options");
+  OPTS.voices.forEach(v => opt($("voice"), v.id, v.name));
+  const styleNames = { cinematic: "Điện ảnh chân thực", history: "Lịch sử sử thi", horror: "Kinh dị u tối",
+    "3d": "Hoạt hình 3D (Pixar)", anime: "Anime (Ghibli)", scifi: "Viễn tưởng", documentary: "Phim tài liệu" };
+  OPTS.styles.forEach(s => opt($("style"), s.id, styleNames[s.id] || s.id));
+  OPTS.providers.forEach(p => opt($("provider"), p.id, p.name));
+  $("provider").value = OPTS.default_provider;
+  opt($("music"), "", "Không dùng nhạc");
+  if (OPTS.music.length) opt($("music"), "random", "🎲 Ngẫu nhiên");
+  OPTS.music.forEach(m => opt($("music"), m, m));
+  restore();
+}
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.mode === m));
+  $("providerBox").style.visibility = m === "auto" ? "visible" : "hidden";
+  $("go").textContent = m === "auto" ? "🎬 Tạo video" : "📝 Chuẩn bị cảnh & mô tả ảnh";
+  const cli = OPTS ? OPTS.gemini_cli : { installed: false, logged_in: false };
+  let html = "";
+  if (m === "manual") {
+    if (!cli.installed) html = `<div class="banner warn">⚠️ Chưa cài Gemini CLI. Chạy <code>login_gemini.bat</code> trong thư mục dự án (tool sẽ tự cài và mở trang đăng nhập Google). Vẫn dùng được nhưng mô tả ảnh sẽ chỉ là câu thoại gốc.</div>`;
+    else if (!cli.logged_in) html = `<div class="banner warn">⚠️ Gemini CLI chưa đăng nhập. Nhấp đúp <code>login_gemini.bat</code>, chọn <b>Sign in with Google</b> bằng tài khoản Gemini Pro, rồi tải lại trang này.</div>`;
+    else html = `<div class="banner good">✅ Đã kết nối Gemini CLI với tài khoản Google của bạn. AI sẽ viết mô tả ảnh miễn phí qua gói của bạn.</div>`;
+  } else if (OPTS && !OPTS.has_api_key) {
+    html = `<div class="banner warn">⚠️ Chưa có API key trong file <code>.env</code>, chỉ dùng được ảnh test. Xem README để lấy key.</div>`;
+  }
+  $("modeBanner").innerHTML = html;
+  save();
+}
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => setMode(t.dataset.mode));
+
+const FIELDS = ["voice", "rate", "style", "provider", "music", "wpc", "customStyle", "extra", "musicVol"];
+function save() {
+  const s = { mode }; FIELDS.forEach(f => s[f] = $(f).value); s.upper = $("upper").checked;
+  localStorage.setItem("shorts-settings", JSON.stringify(s));
+}
+function restore() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem("shorts-settings") || "{}"); } catch {}
+  FIELDS.forEach(f => {
+    if (s[f] === undefined) return;
+    const el = $(f);
+    if (el.tagName !== "SELECT" || [...el.options].some(o => o.value == s[f])) el.value = s[f];
+  });
+  if (s.upper !== undefined) $("upper").checked = s.upper;
+  $("rateVal").textContent = ($("rate").value >= 0 ? "+" : "") + $("rate").value + "%";
+  $("musicVolVal").textContent = $("musicVol").value + "%";
+  $("script").value = localStorage.getItem("shorts-script") || "";
+  setMode(s.mode || (OPTS.has_api_key ? "auto" : "manual"));
+  updateStats();
+}
+
+// ---------------------------------------------------------------- script stats
+let splitTimer = null;
+function updateStats() {
+  const text = $("script").value.trim();
+  const words = text ? text.split(/\s+/).length : 0;
+  const speed = 2.6 * (1 + $("rate").value / 100);
+  $("wc").textContent = words;
+  const secs = Math.round(words / speed);
+  $("dur").textContent = secs + "s" + (secs > 60 ? " ⚠️" : "");
+  clearTimeout(splitTimer);
+  splitTimer = setTimeout(async () => {
+    if (!text) { $("sc").textContent = 0; return; }
+    const r = await api("/api/split", { script: text });
+    $("sc").textContent = r.scenes.length;
+    if ($("scenesPreview").childElementCount) renderPreview(r.scenes);
+  }, 400);
+}
+function renderPreview(scenes) {
+  $("scenesPreview").innerHTML = scenes.map((s, i) => `<div class="scene-line"><span>#${i + 1}</span>${esc(s)}</div>`).join("");
+}
+$("previewBtn").onclick = async () => {
+  if ($("scenesPreview").childElementCount) { $("scenesPreview").innerHTML = ""; return; }
+  renderPreview((await api("/api/split", { script: $("script").value })).scenes);
+};
+$("script").addEventListener("input", () => { localStorage.setItem("shorts-script", $("script").value); updateStats(); });
+$("rate").addEventListener("input", () => { $("rateVal").textContent = ($("rate").value >= 0 ? "+" : "") + $("rate").value + "%"; updateStats(); });
+$("musicVol").addEventListener("input", () => $("musicVolVal").textContent = $("musicVol").value + "%");
+document.querySelectorAll("select, input").forEach(el => el.addEventListener("change", save));
+
+// ---------------------------------------------------------------- jobs
+function renderOptions() {
+  return { voice: $("voice").value, rate: +$("rate").value, music: $("music").value,
+           music_volume: $("musicVol").value / 100, uppercase: $("upper").checked, words_per_caption: +$("wpc").value };
+}
+
+$("go").onclick = async () => {
+  const script = $("script").value.trim();
+  if (!script) { alert("Hãy dán kịch bản trước"); return; }
+  $("go").disabled = true;
+  try {
+    const job = await api("/api/jobs", {
+      script, mode, title: $("title").value, style: $("style").value, custom_style: $("customStyle").value,
+      extra_direction: $("extra").value, provider: $("provider").value, ...renderOptions(),
+    });
+    watch(job.id);
+  } catch (e) { alert("Lỗi: " + e.message); $("go").disabled = false; }
+};
+
+$("renderBtn").onclick = async () => {
+  if (!project) return;
+  const have = project.scenes.filter(s => s.image).length;
+  if (!have) { alert("Chưa có ảnh nào. Hãy thêm ảnh cho các cảnh trước."); return; }
+  if (have < project.scenes.length && !confirm(`Mới có ${have}/${project.scenes.length} ảnh. Cảnh thiếu sẽ dùng tạm ảnh cảnh bên cạnh. Vẫn dựng video?`)) return;
+  $("renderBtn").disabled = true;
+  try { watch((await api(`/api/projects/${project.id}/render`, renderOptions())).id); }
+  catch (e) { alert("Lỗi: " + e.message); $("renderBtn").disabled = false; }
+};
+
+function watch(id) {
+  $("idle").style.display = "none"; $("jobBox").style.display = "block"; $("result").innerHTML = "";
+  clearInterval(polling);
+  polling = setInterval(async () => {
+    let j; try { j = await api("/api/jobs/" + id); } catch { return; }
+    $("step").textContent = j.step || "Đang chuẩn bị...";
+    $("pct").textContent = Math.round(j.progress * 100) + "%";
+    $("bar").style.width = (j.progress * 100) + "%";
+    const logs = $("logs"); const atBottom = logs.scrollTop + logs.clientHeight >= logs.scrollHeight - 10;
+    logs.textContent = j.logs.join("\n"); if (atBottom) logs.scrollTop = logs.scrollHeight;
+    if (j.status !== "done" && j.status !== "error") return;
+    clearInterval(polling); $("go").disabled = false; $("renderBtn").disabled = false;
+    if (j.status === "error") { $("result").innerHTML = `<div class="err">❌ ${esc(j.error)}</div>`; return; }
+    if (j.video) {
+      const url = "/output/" + j.video + "?v=" + Date.now();
+      $("result").innerHTML = `<div class="ok">✅ Hoàn thành!</div><video controls autoplay src="${url}"></video>
+        <a class="dl" href="${url}" download>⬇ Tải video</a>`;
+    } else {
+      $("result").innerHTML = `<div class="ok">✅ Đã chuẩn bị xong. Kéo xuống để thêm ảnh cho từng cảnh 👇</div>`;
+    }
+    loadHistory();
+    if (j.project) openProject(j.project, !j.video);
+  }, 1200);
+}
+
+// ---------------------------------------------------------------- projects / workspace
+async function loadHistory() {
+  const items = await api("/api/projects");
+  $("history").innerHTML = items.length ? "" : '<div style="color:var(--muted);font-size:13px">Chưa có dự án.</div>';
+  items.forEach(p => {
+    const a = document.createElement("a");
+    a.innerHTML = `<span>${p.has_video ? "🎞️" : "📝"} ${esc(p.title)}</span><small>${p.images}/${p.scenes} ảnh</small>`;
+    a.onclick = () => openProject(p.id, true);
+    $("history").appendChild(a);
+  });
+}
+
+async function openProject(pid, scroll) {
+  project = await api("/api/projects/" + pid);
+  $("workspace").style.display = "block";
+  $("wsTitle").textContent = "📁 " + project.title;
+  $("wsGuide").style.display = project.mode === "manual" ? "" : "none";
+  selected = -1;
+  renderGrid();
+  if (project.video && !$("result").querySelector("video")) {
+    $("idle").style.display = "none"; $("jobBox").style.display = "block";
+    $("step").textContent = "Video của dự án"; $("pct").textContent = ""; $("bar").style.width = "100%"; $("logs").textContent = "";
+    $("result").innerHTML = `<video controls src="${project.video}"></video><a class="dl" href="${project.video}" download>⬇ Tải video</a>`;
+  }
+  if (scroll) $("workspace").scrollIntoView({ behavior: "smooth" });
+}
+
+function renderGrid() {
+  const g = $("grid"); g.innerHTML = "";
+  project.scenes.forEach((s, i) => {
+    const card = document.createElement("div");
+    card.className = "sc" + (i === selected ? " selected" : "");
+    card.innerHTML = `
+      <div class="slot ${s.image ? "has" : ""}" title="Bấm để chọn ảnh, hoặc kéo thả ảnh vào">
+        <span class="badge">${i + 1}</span>
+        ${s.image ? `<img src="${s.image}">` : `<span>🖼️<br>Kéo thả / bấm chọn ảnh<br>hoặc Ctrl+V</span>`}
+      </div>
+      <div class="sc-body">
+        <div class="sc-text">🗣️ ${esc(s.text)}</div>
+        <textarea spellcheck="false">${esc(s.prompt)}</textarea>
+        <div class="sc-actions">
+          <button class="btn-sec copy">📋 Copy mô tả</button>
+          ${s.duration ? `<span class="count" style="margin-left:auto;align-self:center">${s.duration}s</span>` : ""}
+        </div>
+      </div>`;
+    const slot = card.querySelector(".slot"), ta = card.querySelector("textarea");
+    card.onclick = () => select(i);
+    slot.onclick = (e) => { e.stopPropagation(); select(i); $("filePick").onchange = ev => { if (ev.target.files[0]) uploadTo(i, ev.target.files[0]); ev.target.value = ""; }; $("filePick").click(); };
+    card.querySelector(".copy").onclick = (e) => { e.stopPropagation(); copyText(ta.value); select(i); };
+    ta.onclick = (e) => e.stopPropagation();
+    ta.onchange = () => { s.prompt = ta.value; api(`/api/projects/${project.id}/prompts/${i}`, { prompt: ta.value }, "PUT"); };
+    card.ondragover = (e) => { e.preventDefault(); e.stopPropagation(); card.classList.add("drag"); };
+    card.ondragleave = () => card.classList.remove("drag");
+    card.ondrop = (e) => { e.preventDefault(); e.stopPropagation(); card.classList.remove("drag");
+      const f = [...e.dataTransfer.files].find(f => f.type.startsWith("image/")); if (f) uploadTo(i, f); };
+    g.appendChild(card);
+  });
+  const have = project.scenes.filter(s => s.image).length;
+  $("wsCount").textContent = `${have}/${project.scenes.length}`;
+}
+
+function select(i) {
+  selected = i;
+  document.querySelectorAll(".sc").forEach((c, k) => c.classList.toggle("selected", k === i));
+}
+
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); }
+  catch { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+  toast("📋 Đã copy, giờ dán vào Gemini");
+}
+
+async function uploadTo(i, file) {
+  if (!project) return;
+  try {
+    const r = await api(`/api/projects/${project.id}/images/${i}`, file);
+    project.scenes[i].image = r.image;
+    const next = project.scenes.findIndex((s, k) => k > i && !s.image);
+    selected = next >= 0 ? next : i;
+    renderGrid();
+    toast(`✅ Đã thêm ảnh cảnh ${i + 1}` + (next >= 0 ? ` → tiếp theo: cảnh ${next + 1}` : ""));
+  } catch (e) { alert("Lỗi tải ảnh: " + e.message); }
+}
+
+async function bulkUpload(files) {
+  files = [...files].filter(f => f.type.startsWith("image/")).sort((a, b) => a.lastModified - b.lastModified);
+  const empty = project.scenes.map((s, i) => s.image ? -1 : i).filter(i => i >= 0);
+  const targets = empty.length ? empty : project.scenes.map((_, i) => i);
+  for (let k = 0; k < files.length && k < targets.length; k++) await uploadTo(targets[k], files[k]);
+}
+
+$("copyAll").onclick = () => copyText(project.scenes.map((s, i) => `Scene ${i + 1}: ${s.prompt}`).join("\n\n"));
+const bulk = $("bulk");
+bulk.onclick = () => { $("filePickMulti").onchange = e => { bulkUpload(e.target.files); e.target.value = ""; }; $("filePickMulti").click(); };
+bulk.ondragover = (e) => { e.preventDefault(); bulk.classList.add("drag"); };
+bulk.ondragleave = () => bulk.classList.remove("drag");
+bulk.ondrop = (e) => { e.preventDefault(); bulk.classList.remove("drag"); bulkUpload(e.dataTransfer.files); };
+
+document.addEventListener("paste", (e) => {
+  if (!project || $("workspace").style.display === "none") return;
+  const item = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith("image/"));
+  if (!item) return;
+  e.preventDefault();
+  let i = selected;
+  if (i < 0) i = project.scenes.findIndex(s => !s.image);
+  if (i < 0) { toast("Hãy bấm chọn cảnh muốn thay ảnh trước"); return; }
+  uploadTo(i, item.getAsFile());
+});
+// tránh trình duyệt mở ảnh khi thả lệch chỗ
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => e.preventDefault());
+
+loadOptions().then(loadHistory);
+</script>
+</body>
+</html>

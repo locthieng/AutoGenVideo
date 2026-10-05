@@ -1,0 +1,8 @@
+fastapi>=0.110
+uvicorn>=0.29
+edge-tts>=7.0
+google-genai>=1.20
+openai>=1.40
+pillow>=10.0
+imageio-ffmpeg>=0.5
+python-dotenv>=1.0
