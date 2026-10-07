@@ -8,7 +8,31 @@ Dán kịch bản → nhận **video YouTube Shorts hoàn chỉnh** (1080×1920)
 
 ## Cách dùng
 
-Nhấp đúp **`run.bat`** → trình duyệt tự mở `http://localhost:8000`. Có 2 chế độ:
+### 🤖 Tự động bằng Gemini web (tài khoản Google đang dùng)
+
+1. Chạy `setup_gemini_web.bat` một lần để bổ sung Playwright vào `.venv` hiện có.
+2. Mở `run.bat`, chọn **Tự động (Gemini web)**, bấm **Mở Gemini để đăng nhập**.
+3. Đăng nhập tài khoản Google trong cửa sổ Edge/Chrome riêng của tool. Đăng nhập Gemini CLI không thay thế bước này. Tool lưu session trong `.browser-profile/` đã được Git ignore.
+4. Nhập kịch bản, chọn giọng/phong cách rồi bấm **Tạo video**. Tool chia cảnh, nhờ Gemini web viết prompt rồi gửi từng prompt vào cùng conversation, tải ảnh gốc, tạo giọng đọc/phụ đề rồi dựng video. Chế độ này không phụ thuộc Gemini CLI.
+5. Giữ server và cửa sổ Gemini mở trong lúc chạy. Nếu cần xác minh hoặc hết quota, job báo lỗi và giữ project/ảnh đã lưu. Mở project ở **Dự án gần đây**, bấm **Tiếp tục Gemini web** để chỉ tạo ảnh còn thiếu rồi dựng video. Có thể thêm ảnh thủ công trước khi tiếp tục.
+
+Chế độ web chỉ dựng khi mỗi cảnh có ảnh. Không cần API key và không tự chuyển sang API trả phí. Quota/quyền tạo ảnh phụ thuộc tài khoản Gemini. Nếu Gemini viết prompt lỗi, job dừng và cho phép tiếp tục.
+
+Tool mở browser profile riêng bằng Edge/Chrome đã cài trên Windows, dùng remote debugging trên localhost và chỉ cho một job Gemini web chạy cùng lúc. Sau khi restart server, tool nhận diện lại browser thuộc profile này; profile đăng nhập vẫn được giữ.
+
+Gemini có thể đổi UI. Nếu không tìm thấy ảnh/nút tải, tool báo lỗi thay vì dùng screenshot chất lượng thấp. Các selector có thể cấu hình trong `.env` (restart server sau khi đổi):
+
+- `GEMINI_WEB_COMPOSER_SELECTOR`: mặc định `[role="textbox"][contenteditable="true"]`.
+- `GEMINI_WEB_RESPONSE_SELECTOR`: mặc định `model-response`, container riêng cho mỗi lượt trả lời.
+- `GEMINI_WEB_DOWNLOAD_SELECTOR`: CSS selector cho nút tải ảnh bên trong response; mặc định nhận dạng nút qua nhãn tiếng Anh/Việt.
+- `GEMINI_WEB_TIMEOUT=240`: thời gian chờ mỗi ảnh, giây.
+- `GEMINI_WEB_LOGIN_TIMEOUT=300`: thời gian chờ đăng nhập, giây.
+- `GEMINI_WEB_PORT=9223`: cổng remote debugging.
+- `GEMINI_WEB_BROWSER`: đường dẫn Edge/Chrome executable nếu không tự tìm được.
+
+Browser/session và tải file dùng [Playwright CDP](https://playwright.dev/python/docs/api/class-browsertype#browser-type-connect-over-cdp) và [download events](https://playwright.dev/python/docs/downloads).
+
+Nhấp đúp **`run.bat`** → trình duyệt tự mở `http://localhost:8000`. Hai chế độ cũ vẫn dùng được:
 
 ### 🙌 Chế độ bán tự động (dùng gói Gemini Pro, không tốn thêm tiền)
 1. **Lần đầu:** nhấp đúp **`login_gemini.bat`** → chọn *Sign in with Google* → đăng nhập tài khoản Gemini Pro → gõ `/quit`.

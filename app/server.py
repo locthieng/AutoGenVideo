@@ -4,6 +4,7 @@ from __future__ import annotations
 import sys
 import webbrowser
 from threading import Timer
+from urllib.parse import urlparse
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -12,7 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.staticfiles import StaticFiles
 
-from . import config, gemini_cli, pipeline
+from . import config, gemini_cli, gemini_web, pipeline
 from .pipeline import JOBS, JobOptions
 from .script_splitter import split_scenes
 
@@ -79,6 +80,15 @@ def _err(e: Exception):
     raise HTTPException(400, str(e))
 
 
+def _require_local(request: Request) -> None:
+    # Các thao tác điều khiển browser đăng nhập chỉ được gọi từ máy này.
+    if not request.client or request.client.host not in ("127.0.0.1", "::1", "testclient"):
+        raise HTTPException(403, "Gemini web chỉ dùng trên máy local")
+    origin = request.headers.get("origin")
+    if origin and urlparse(origin).hostname not in ("127.0.0.1", "localhost", "::1"):
+        raise HTTPException(403, "Origin không được phép điều khiển Gemini browser")
+
+
 @app.get("/")
 def index():
     return FileResponse(config.STATIC_DIR / "index.html", headers={"Cache-Control": "no-store"})
@@ -103,6 +113,7 @@ def options():
         "default_provider": default_provider,
         "has_api_key": bool(config.GEMINI_API_KEY or config.OPENAI_API_KEY),
         "gemini_cli": gemini_cli.status(),
+        "gemini_web": gemini_web.status(),
         "music": music,
     }
 
@@ -113,12 +124,37 @@ def split(req: SplitReq):
 
 
 @app.post("/api/jobs")
-def create_job(req: CreateJob):
+def create_job(req: CreateJob, request: Request):
     if not req.script.strip():
         raise HTTPException(400, "Kịch bản trống")
     o = JobOptions.from_dict(req.model_dump())
-    job = pipeline.start_prepare(o) if o.mode == "manual" else pipeline.start_auto(o)
+    if o.mode not in ("manual", "auto", "web"):
+        raise HTTPException(400, "Chế độ không hợp lệ")
+    if o.mode == "web":
+        _require_local(request)
+    job = (pipeline.start_web(o) if o.mode == "web" else
+           pipeline.start_prepare(o) if o.mode == "manual" else pipeline.start_auto(o))
     return job.to_dict()
+
+
+@app.post("/api/gemini-web/open")
+def open_gemini_web(request: Request):
+    _require_local(request)
+    try:
+        gemini_web.open_browser()
+        return {"ok": True}
+    except Exception as e:
+        _err(e)
+
+
+@app.post("/api/projects/{pid}/resume-web")
+def resume_gemini_web(pid: str, req: RenderReq, request: Request):
+    _require_local(request)
+    try:
+        overrides = {k: v for k, v in req.model_dump().items() if v is not None}
+        return pipeline.resume_web(pid, overrides).to_dict()
+    except Exception as e:
+        _err(e)
 
 
 @app.get("/api/jobs/{job_id}")

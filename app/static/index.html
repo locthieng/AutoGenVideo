@@ -38,7 +38,8 @@
   summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   .check { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: var(--text); }
   .check input { width: auto; }
-  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 6px; }
+  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 6px; }
+  @media (max-width: 600px) { .tabs { grid-template-columns: 1fr; } }
   .tab { padding: 12px; border-radius: 11px; border: 2px solid var(--border); background: var(--panel2); text-align: left; color: var(--text); }
   .tab b { display: block; font-size: 14px; }
   .tab small { color: var(--muted); font-weight: 400; font-size: 12px; }
@@ -111,10 +112,12 @@
   <section class="card">
     <h2>1. Chế độ</h2>
     <div class="tabs">
+      <button class="tab" data-mode="web"><b>🤖 Tự động (Gemini web)</b><small>Tool tạo ảnh trên Gemini bằng tài khoản của bạn rồi dựng video.</small></button>
       <button class="tab" data-mode="manual"><b>🙌 Bán tự động (gói Gemini Pro)</b><small>Bạn tạo ảnh trên app Gemini, tool lo phần còn lại. Không tốn thêm tiền.</small></button>
       <button class="tab" data-mode="auto"><b>⚡ Tự động (API key)</b><small>Tool tự tạo ảnh bằng API, tính phí theo ảnh.</small></button>
     </div>
     <div id="modeBanner"></div>
+    <button class="btn-sec" id="openGemini" style="margin-top:10px">🌐 Mở Gemini để đăng nhập</button>
 
     <h2 style="margin-top:20px">2. Kịch bản</h2>
     <label for="title">Tên video (không bắt buộc)</label>
@@ -190,6 +193,7 @@
       <a class="btn-sec" href="https://gemini.google.com/app" target="_blank" style="text-decoration:none">🌐 Mở Gemini</a>
       <button class="btn-sec" id="copyAll">📋 Copy tất cả mô tả</button>
       <button class="btn-ok" id="renderBtn">🎬 Dựng video</button>
+      <button class="btn-sec" id="resumeWebBtn" style="display:none">🤖 Tiếp tục Gemini web</button>
     </div>
     <ol class="guide" id="wsGuide">
       <li>Bấm <b>📋 Copy</b> ở mỗi cảnh, dán vào <b>app Gemini</b> để tạo ảnh. Nên tạo tất cả trong <b>cùng 1 cuộc trò chuyện</b> để nhân vật giống nhau.</li>
@@ -217,7 +221,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-let polling = null, mode = "manual", OPTS = null, project = null, selected = -1;
+let polling = null, mode = "web", OPTS = null, project = null, selected = -1;
 const THUMB = -2;  // selected === THUMB -> đang chọn ô thumbnail
 
 async function api(path, body, method) {
@@ -256,10 +260,17 @@ function setMode(m) {
   mode = m;
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.mode === m));
   $("providerBox").style.visibility = m === "auto" ? "visible" : "hidden";
-  $("go").textContent = m === "auto" ? "🎬 Tạo video" : "📝 Chuẩn bị cảnh & mô tả ảnh";
+  $("go").textContent = m === "manual" ? "📝 Chuẩn bị cảnh & mô tả ảnh" : "🎬 Tạo video";
+  $("openGemini").style.display = m === "web" ? "" : "none";
   const cli = OPTS ? OPTS.gemini_cli : { installed: false, logged_in: false };
   let html = "";
-  if (m === "manual") {
+  if (m === "web") {
+    const web = OPTS?.gemini_web || {};
+    html = `<div class="banner ${web.automation_installed && web.installed ? 'good' : 'warn'}">` +
+      (!web.automation_installed ? 'Chạy <code>setup_gemini_web.bat</code> một lần để cài browser automation, sau đó mở lại run.bat. ' : '') +
+      (!web.installed ? 'Cần Microsoft Edge hoặc Google Chrome. ' : '') +
+      `Đăng nhập Gemini trong cửa sổ riêng của tool. Tool tạo ảnh lần lượt, lưu từng cảnh rồi tự dựng video. Nếu hết quota hoặc cần xác minh, ảnh đã tạo được giữ lại để tiếp tục.</div>`;
+  } else if (m === "manual") {
     if (!cli.installed) html = `<div class="banner warn">⚠️ Chưa cài Gemini CLI. Chạy <code>login_gemini.bat</code> trong thư mục dự án (tool sẽ tự cài và mở trang đăng nhập Google). Vẫn dùng được nhưng mô tả ảnh sẽ chỉ là câu thoại gốc.</div>`;
     else if (!cli.logged_in) html = `<div class="banner warn">⚠️ Gemini CLI chưa đăng nhập. Nhấp đúp <code>login_gemini.bat</code>, chọn <b>Sign in with Google</b> bằng tài khoản Gemini Pro, rồi tải lại trang này.</div>`;
     else html = `<div class="banner good">✅ Đã kết nối Gemini CLI với tài khoản Google của bạn. AI sẽ viết mô tả ảnh miễn phí qua gói của bạn.</div>`;
@@ -270,6 +281,12 @@ function setMode(m) {
   save();
 }
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => setMode(t.dataset.mode));
+$("openGemini").onclick = async () => {
+  $("openGemini").disabled = true;
+  try { await api("/api/gemini-web/open", {}); toast("Đăng nhập Gemini trong cửa sổ vừa mở"); }
+  catch (e) { alert(e.message); }
+  finally { $("openGemini").disabled = false; }
+};
 
 const FIELDS = ["voice", "rate", "style", "provider", "music", "wpc", "customStyle", "extra", "musicVol"];
 function save() {
@@ -288,7 +305,7 @@ function restore() {
   $("rateVal").textContent = ($("rate").value >= 0 ? "+" : "") + $("rate").value + "%";
   $("musicVolVal").textContent = $("musicVol").value + "%";
   $("script").value = localStorage.getItem("shorts-script") || "";
-  setMode(s.mode || (OPTS.has_api_key ? "auto" : "manual"));
+  setMode(["web", "manual", "auto"].includes(s.mode) ? s.mode : "web");
   updateStats();
 }
 
@@ -345,6 +362,9 @@ $("go").onclick = async () => {
 $("renderBtn").onclick = async () => {
   if (!project) return;
   const have = project.scenes.filter(s => s.image).length;
+  if (project.mode === "web" && have < project.scenes.length) {
+    alert("Chưa đủ ảnh. Bấm Tiếp tục Gemini web để tạo các cảnh còn thiếu."); return;
+  }
   if (!have) { alert("Chưa có ảnh nào. Hãy thêm ảnh cho các cảnh trước."); return; }
   if (have < project.scenes.length && !confirm(`Mới có ${have}/${project.scenes.length} ảnh. Cảnh thiếu sẽ dùng tạm ảnh cảnh bên cạnh. Vẫn dựng video?`)) return;
   $("renderBtn").disabled = true;
@@ -352,7 +372,15 @@ $("renderBtn").onclick = async () => {
   catch (e) { alert("Lỗi: " + e.message); $("renderBtn").disabled = false; }
 };
 
+$("resumeWebBtn").onclick = async () => {
+  if (!project) return;
+  $("resumeWebBtn").disabled = true; $("go").disabled = true;
+  try { watch((await api(`/api/projects/${project.id}/resume-web`, renderOptions())).id); }
+  catch (e) { alert(e.message); $("resumeWebBtn").disabled = false; $("go").disabled = false; }
+};
+
 function watch(id) {
+  $("resumeWebBtn").disabled = true; $("renderBtn").disabled = true; $("go").disabled = true;
   $("idle").style.display = "none"; $("jobBox").style.display = "block"; $("result").innerHTML = "";
   clearInterval(polling);
   polling = setInterval(async () => {
@@ -363,8 +391,13 @@ function watch(id) {
     const logs = $("logs"); const atBottom = logs.scrollTop + logs.clientHeight >= logs.scrollHeight - 10;
     logs.textContent = j.logs.join("\n"); if (atBottom) logs.scrollTop = logs.scrollHeight;
     if (j.status !== "done" && j.status !== "error") return;
-    clearInterval(polling); $("go").disabled = false; $("renderBtn").disabled = false;
-    if (j.status === "error") { $("result").innerHTML = `<div class="err">❌ ${esc(j.error)}</div>`; return; }
+    clearInterval(polling); $("go").disabled = false; $("renderBtn").disabled = false; $("resumeWebBtn").disabled = false;
+    if (j.status === "error") {
+      $("result").innerHTML = `<div class="err">❌ ${esc(j.error)}</div>`;
+      await loadHistory();
+      if (j.project) await openProject(j.project, true);
+      return;
+    }
     if (j.video) {
       const url = "/output/" + j.video + "?v=" + Date.now();
       $("result").innerHTML = `<div class="ok">✅ Hoàn thành!</div><video controls autoplay src="${url}"></video>
@@ -394,6 +427,7 @@ async function openProject(pid, scroll) {
   $("workspace").style.display = "block";
   $("wsTitle").textContent = "📁 " + project.title;
   $("wsGuide").style.display = project.mode === "manual" ? "" : "none";
+  $("resumeWebBtn").style.display = project.mode === "web" ? "" : "none";
   selected = -1;
   renderGrid();
   renderThumb();

@@ -40,7 +40,7 @@ Scenes:
 """
 
 
-def _parse_prompts(raw: str, n: int) -> list[str] | None:
+def _parse_prompts(raw: str, n: int, *, strict: bool = False) -> list[str] | None:
     raw = raw.strip()
     m = re.search(r"\{.*\}", raw, re.S)
     if not m:
@@ -51,6 +51,8 @@ def _parse_prompts(raw: str, n: int) -> list[str] | None:
         return None
     prompts = data.get("prompts") if isinstance(data, dict) else None
     if not isinstance(prompts, list) or not prompts:
+        return None
+    if strict and (len(prompts) != n or any(not isinstance(p, str) or not p.strip() for p in prompts)):
         return None
     prompts = [str(p).strip() for p in prompts]
     if len(prompts) < n:

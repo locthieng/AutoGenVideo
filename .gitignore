@@ -4,3 +4,4 @@ output/
 __pycache__/
 *.pyc
 assets/fonts/*.ttf
+.browser-profile/

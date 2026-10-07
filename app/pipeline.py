@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from pathlib import Path
 
-from . import config, gemini_cli, images, render, subtitles, tts
+from . import config, gemini_cli, gemini_web, images, render, subtitles, tts
 from .script_splitter import split_scenes
 
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp")
@@ -29,7 +29,7 @@ IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 @dataclass
 class JobOptions:
     script: str = ""
-    mode: str = "auto"  # auto | manual
+    mode: str = "auto"  # auto | manual | web
     voice: str = "en-US-AndrewMultilingualNeural"
     rate: int = 10  # % tốc độ đọc, Shorts nên nhanh hơn một chút
     style: str = "cinematic"
@@ -202,6 +202,8 @@ def check_image_provider(provider: str) -> None:
 
 
 def resolve_prompt_provider(o: JobOptions) -> str:
+    if o.mode == "web":
+        return "none"  # Prompt sẽ được viết trong chính conversation Gemini web.
     if o.prompt_provider and o.prompt_provider != "auto":
         return o.prompt_provider
     if o.mode == "auto" and o.provider in ("gemini", "openai"):
@@ -233,7 +235,7 @@ def step_prepare(job: Job, o: JobOptions) -> Path:
 
     style = o.custom_style.strip() or config.STYLES.get(o.style, config.STYLES["cinematic"])
     pp = resolve_prompt_provider(o)
-    if pp == "none":
+    if pp == "none" and o.mode != "web":
         job.log("⚠️ Chưa có Gemini CLI/API key nên dùng câu thoại làm mô tả ảnh.")
     prompts = images.build_prompts(scenes, style, o.extra_direction, pp, job.log, cwd=pdir)
     if o.mode == "manual":  # thêm yêu cầu khung dọc để dán thẳng vào app Gemini
@@ -245,7 +247,7 @@ def step_prepare(job: Job, o: JobOptions) -> Path:
         "options": {k: v for k, v in asdict(o).items() if k != "script"},
         "scenes": [{"text": s, "prompt": p} for s, p in zip(scenes, prompts)],
     })
-    job.log("✅ Đã viết xong mô tả ảnh")
+    job.log("✅ Đã chia cảnh; sẽ viết prompt trên Gemini web" if o.mode == "web" else "✅ Đã viết xong mô tả ảnh")
     return pdir
 
 
@@ -271,6 +273,50 @@ def step_generate_images(job: Job, pdir: Path, o: JobOptions, p0: float, p1: flo
             job.progress = p0 + (p1 - p0) * (k + 1) / n
 
 
+def step_generate_web_images(job: Job, pdir: Path) -> None:
+    job.step = "Tạo ảnh trên Gemini web"
+    proj = load_project(pdir.name)
+    scenes = proj["scenes"]
+    missing = [i for i in range(len(scenes)) if scene_image(pdir, i) is None]
+    job.progress = 0.1 + 0.5 * (len(scenes) - len(missing)) / len(scenes)
+    if not missing:
+        return
+
+    def record_chat(url: str) -> None:
+        # Đọc lại để không ghi đè prompt đã chỉnh trong UI.
+        current = load_project(pdir.name)
+        current["gemini_web_chat"] = url
+        save_project(pdir, current)
+
+    with gemini_web.GeminiWeb(job.log) as session:
+        session.begin(proj.get("gemini_web_chat", ""))
+        if not proj.get("gemini_web_prompts_ready"):
+            job.step = "Gemini web: viết prompt cho các cảnh"
+            opts = JobOptions.from_dict(proj["options"])
+            style = opts.custom_style.strip() or config.STYLES.get(opts.style, config.STYLES["cinematic"])
+            instruction = images.PROMPT_INSTRUCTIONS.format(
+                n=len(scenes), style=style,
+                extra=f"- Extra direction from the creator: {opts.extra_direction}" if opts.extra_direction.strip() else "",
+                scenes="\n".join(f"{i + 1}. {s['text']}" for i, s in enumerate(scenes)))
+            raw = session.ask(instruction, record_chat)
+            prompts = images._parse_prompts(raw, len(scenes), strict=True)
+            if not prompts:
+                raise RuntimeError("Gemini trả về prompt sai định dạng. Bấm Tiếp tục để thử lại.")
+            current = load_project(pdir.name)
+            for i, prompt in enumerate(prompts):
+                if i in missing:
+                    current["scenes"][i]["prompt"] = prompt
+            current["gemini_web_prompts_ready"] = True
+            save_project(pdir, current)
+            job.log("✅ Gemini web đã viết prompt cho các cảnh")
+        for k, i in enumerate(missing):
+            job.step = f"Gemini web: tạo ảnh cảnh {i + 1}/{len(scenes)}"
+            prompt = load_project(pdir.name)["scenes"][i]["prompt"]
+            session.generate(prompt, pdir / "images" / f"{i:02d}.jpg", record_chat)
+            job.log(f"🖼️ Đã lưu ảnh cảnh {i + 1}/{len(scenes)}")
+            job.progress = 0.1 + 0.5 * (len(scenes) - len(missing) + k + 1) / len(scenes)
+
+
 def step_render(job: Job, pdir: Path, o: JobOptions, p0: float) -> Path:
     """Giọng đọc + phụ đề + ghép ảnh có sẵn trong project thành video."""
     proj = json.loads((pdir / "project.json").read_text(encoding="utf-8"))
@@ -280,6 +326,8 @@ def step_render(job: Job, pdir: Path, o: JobOptions, p0: float) -> Path:
     # ảnh: cảnh thiếu ảnh -> dùng ảnh cảnh gần nhất
     img_paths: list[Path | None] = [scene_image(pdir, i) for i in range(n)]
     have = [i for i, p in enumerate(img_paths) if p]
+    if o.mode == "web" and len(have) != n:
+        raise RuntimeError("Gemini web chưa có đủ ảnh. Bấm Tiếp tục Gemini web trước khi dựng video.")
     if not have:
         raise RuntimeError("Chưa có ảnh nào. Hãy thêm ảnh cho các cảnh trước khi dựng video.")
     for i in range(n):
@@ -403,6 +451,23 @@ def run_prepare(job: Job, o: JobOptions) -> None:
     _run(job, fn)
 
 
+def run_web(job: Job, o: JobOptions, pid: str = "") -> None:
+    def fn():
+        if not gemini_web.JOB_LOCK.acquire(blocking=False):
+            raise RuntimeError("Đang có job Gemini web khác chạy. Chờ job đó hoàn tất rồi thử lại.")
+        try:
+            if pid:
+                pdir = project_dir(pid)
+                job.project = pid
+            else:
+                pdir = step_prepare(job, o)
+            step_generate_web_images(job, pdir)
+            _finish_video(job, step_render(job, pdir, o, 0.6))
+        finally:
+            gemini_web.JOB_LOCK.release()
+    _run(job, fn)
+
+
 def run_render(job: Job, pid: str, overrides: dict) -> None:
     def fn():
         pdir = project_dir(pid)
@@ -427,6 +492,19 @@ def start_auto(o: JobOptions) -> Job:
 
 def start_prepare(o: JobOptions) -> Job:
     return _start("prepare", run_prepare, o)
+
+
+def start_web(o: JobOptions) -> Job:
+    o.mode = "web"
+    return _start("web", run_web, o)
+
+
+def resume_web(pid: str, overrides: dict) -> Job:
+    proj = load_project(pid)
+    if proj["options"].get("mode") != "web":
+        raise ValueError("Chỉ tiếp tục Gemini web cho dự án tạo bằng chế độ web")
+    o = JobOptions.from_dict({**proj["options"], **overrides, "mode": "web"})
+    return _start("web", run_web, o, pid)
 
 
 def start_render(pid: str, overrides: dict) -> Job:
