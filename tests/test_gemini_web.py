@@ -105,13 +105,14 @@ class WebPipelineTests(unittest.TestCase):
         session.page.url = "https://gemini.google.com/app/abc"
         responses = MagicMock()
         responses.count.side_effect = [1, 2]
-        response = responses.nth.return_value
+        response = responses.last
         response.locator.return_value.filter.return_value.evaluate_all.return_value = True
         stop = MagicMock()
         stop.is_visible.return_value = False
         session._stop_button = MagicMock(return_value=stop)
         session._responses = MagicMock(return_value=responses)
         session._composer = MagicMock()
+        session._reply_text = MagicMock(return_value="")
 
         def save_as(path):
             if valid:
@@ -127,7 +128,7 @@ class WebPipelineTests(unittest.TestCase):
         target = self.pdir / "images" / "00.jpg"
         record = MagicMock()
         session.generate("one", target, record)
-        responses.nth.assert_called_once_with(1)
+        responses.nth.assert_not_called()
         with Image.open(target) as image:
             self.assertEqual(image.size, (config.WIDTH, config.HEIGHT))
         record.assert_called_once_with("https://gemini.google.com/app/abc")

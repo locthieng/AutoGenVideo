@@ -38,7 +38,7 @@
   summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   .check { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: var(--text); }
   .check input { width: auto; }
-  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 6px; }
+  .tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 6px; }
   @media (max-width: 600px) { .tabs { grid-template-columns: 1fr; } }
   .tab { padding: 12px; border-radius: 11px; border: 2px solid var(--border); background: var(--panel2); text-align: left; color: var(--text); }
   .tab b { display: block; font-size: 14px; }
@@ -113,8 +113,7 @@
     <h2>1. Chế độ</h2>
     <div class="tabs">
       <button class="tab" data-mode="web"><b>🤖 Tự động (Gemini web)</b><small>Tool tạo ảnh trên Gemini bằng tài khoản của bạn rồi dựng video.</small></button>
-      <button class="tab" data-mode="manual"><b>🙌 Bán tự động (gói Gemini Pro)</b><small>Bạn tạo ảnh trên app Gemini, tool lo phần còn lại. Không tốn thêm tiền.</small></button>
-      <button class="tab" data-mode="auto"><b>⚡ Tự động (API key)</b><small>Tool tự tạo ảnh bằng API, tính phí theo ảnh.</small></button>
+      <button class="tab" data-mode="chatgpt"><b>🤖 Tự động (ChatGPT web)</b><small>Tool tạo ảnh trên ChatGPT bằng tài khoản của bạn rồi dựng video.</small></button>
     </div>
     <div id="modeBanner"></div>
     <button class="btn-sec" id="openGemini" style="margin-top:10px">🌐 Mở Gemini để đăng nhập</button>
@@ -142,7 +141,7 @@
     </div>
     <div class="row">
       <div><label for="style">Phong cách hình ảnh</label><select id="style"></select></div>
-      <div id="providerBox"><label for="provider">Tạo ảnh bằng</label><select id="provider"></select></div>
+
     </div>
     <div class="row">
       <div>
@@ -190,16 +189,12 @@
     <div class="ws-head">
       <h3 id="wsTitle">Dự án</h3>
       <span class="count">Ảnh: <b id="wsCount">0/0</b></span>
-      <a class="btn-sec" href="https://gemini.google.com/app" target="_blank" style="text-decoration:none">🌐 Mở Gemini</a>
+      <button class="btn-sec" id="openProjectBrowser">🌐 Mở browser dự án</button>
       <button class="btn-sec" id="copyAll">📋 Copy tất cả mô tả</button>
       <button class="btn-ok" id="renderBtn">🎬 Dựng video</button>
       <button class="btn-sec" id="resumeWebBtn" style="display:none">🤖 Tiếp tục Gemini web</button>
     </div>
-    <ol class="guide" id="wsGuide">
-      <li>Bấm <b>📋 Copy</b> ở mỗi cảnh, dán vào <b>app Gemini</b> để tạo ảnh. Nên tạo tất cả trong <b>cùng 1 cuộc trò chuyện</b> để nhân vật giống nhau.</li>
-      <li>Đưa ảnh vào cảnh: <b>kéo thả</b> vào ô ảnh, <b>bấm vào ô</b> để chọn file, hoặc <b>bấm chọn cảnh rồi Ctrl+V</b> (copy ảnh từ Gemini bằng chuột phải → Sao chép hình ảnh).</li>
-      <li>Đủ ảnh thì bấm <b>🎬 Dựng video</b>. Muốn đổi ảnh nào thì thay rồi dựng lại.</li>
-    </ol>
+    <p class="guide">Tool tự tạo ảnh và dựng video. Bạn có thể thay ảnh từng cảnh rồi dựng lại, hoặc bấm Tiếp tục để tạo các ảnh còn thiếu.</p>
     <div class="bulk" id="bulk">📥 Kéo <b>nhiều ảnh cùng lúc</b> vào đây: tự xếp vào các cảnh còn trống theo thứ tự đã tải về</div>
     <div class="sc thumb-card" id="thumbCard" title="Bấm để chọn ảnh, kéo thả, hoặc bấm chọn ô này rồi Ctrl+V">
       <div class="slot" id="thumbSlot"></div>
@@ -225,14 +220,20 @@ let polling = null, mode = "web", OPTS = null, project = null, selected = -1;
 const THUMB = -2;  // selected === THUMB -> đang chọn ô thumbnail
 
 async function api(path, body, method) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
   const init = body === undefined ? {} : (body instanceof Blob
     ? { method: method || "POST", body }
     : { method: method || "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   let res;
   try {
+    init.signal = controller.signal;
     res = await fetch(path, init);
   } catch (err) {
+    if (err.name === "AbortError") throw new Error("Server không phản hồi trong 20 giây. Kiểm tra cửa sổ run.bat; khi server hoạt động lại, tool sẽ cập nhật tiến trình.");
     throw new Error("Không thể kết nối đến server (Failed to fetch). Hãy kiểm tra xem cửa sổ đen (run.bat) có đang mở không, không được tắt cửa sổ đó!");
+  } finally {
+    clearTimeout(timeout);
   }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
   return res.json();
@@ -248,47 +249,44 @@ async function loadOptions() {
   const styleNames = { cinematic: "Điện ảnh chân thực", history: "Lịch sử sử thi", horror: "Kinh dị u tối",
     "3d": "Hoạt hình 3D (Pixar)", anime: "Anime (Ghibli)", scifi: "Viễn tưởng", documentary: "Phim tài liệu" };
   OPTS.styles.forEach(s => opt($("style"), s.id, styleNames[s.id] || s.id));
-  OPTS.providers.forEach(p => opt($("provider"), p.id, p.name));
-  $("provider").value = OPTS.default_provider;
   opt($("music"), "", "Không dùng nhạc");
   if (OPTS.music.length) opt($("music"), "random", "🎲 Ngẫu nhiên");
   OPTS.music.forEach(m => opt($("music"), m, m));
   restore();
 }
 
+function webName(m) { return m === "chatgpt" ? "ChatGPT" : "Gemini"; }
+function webPath(m) { return m === "chatgpt" ? "chatgpt-web" : "gemini-web"; }
 function setMode(m) {
   mode = m;
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.mode === m));
-  $("providerBox").style.visibility = m === "auto" ? "visible" : "hidden";
-  $("go").textContent = m === "manual" ? "📝 Chuẩn bị cảnh & mô tả ảnh" : "🎬 Tạo video";
-  $("openGemini").style.display = m === "web" ? "" : "none";
-  const cli = OPTS ? OPTS.gemini_cli : { installed: false, logged_in: false };
-  let html = "";
-  if (m === "web") {
-    const web = OPTS?.gemini_web || {};
-    html = `<div class="banner ${web.automation_installed && web.installed ? 'good' : 'warn'}">` +
-      (!web.automation_installed ? 'Chạy <code>setup_gemini_web.bat</code> một lần để cài browser automation, sau đó mở lại run.bat. ' : '') +
-      (!web.installed ? 'Cần Microsoft Edge hoặc Google Chrome. ' : '') +
-      `Đăng nhập Gemini trong cửa sổ riêng của tool. Tool tạo ảnh lần lượt, lưu từng cảnh rồi tự dựng video. Nếu hết quota hoặc cần xác minh, ảnh đã tạo được giữ lại để tiếp tục.</div>`;
-  } else if (m === "manual") {
-    if (!cli.installed) html = `<div class="banner warn">⚠️ Chưa cài Gemini CLI. Chạy <code>login_gemini.bat</code> trong thư mục dự án (tool sẽ tự cài và mở trang đăng nhập Google). Vẫn dùng được nhưng mô tả ảnh sẽ chỉ là câu thoại gốc.</div>`;
-    else if (!cli.logged_in) html = `<div class="banner warn">⚠️ Gemini CLI chưa đăng nhập. Nhấp đúp <code>login_gemini.bat</code>, chọn <b>Sign in with Google</b> bằng tài khoản Gemini Pro, rồi tải lại trang này.</div>`;
-    else html = `<div class="banner good">✅ Đã kết nối Gemini CLI với tài khoản Google của bạn. AI sẽ viết mô tả ảnh miễn phí qua gói của bạn.</div>`;
-  } else if (OPTS && !OPTS.has_api_key) {
-    html = `<div class="banner warn">⚠️ Chưa có API key trong file <code>.env</code>, chỉ dùng được ảnh test. Xem README để lấy key.</div>`;
-  }
-  $("modeBanner").innerHTML = html;
+  const name = webName(m);
+  const web = OPTS?.[m === "chatgpt" ? "chatgpt_web" : "gemini_web"] || {};
+  $("openGemini").textContent = `🌐 Mở ${name} để đăng nhập`;
+  $("modeBanner").innerHTML = `<div class="banner ${web.automation_installed && web.installed ? 'good' : 'warn'}">` +
+    (!web.automation_installed ? 'Chạy <code>setup_web.bat</code> một lần rồi mở lại run.bat. ' : '') +
+    (!web.installed ? 'Cần Microsoft Edge hoặc Google Chrome. ' : '') +
+    `Đăng nhập ${name} trong cửa sổ riêng của tool. Tool tạo ảnh lần lượt, lưu từng cảnh rồi tự dựng video. Nếu hết quota hoặc cần xác minh, ảnh đã tạo được giữ lại để tiếp tục.</div>`;
   save();
 }
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => setMode(t.dataset.mode));
+async function openBrowser(m) {
+  await api(`/api/${webPath(m)}/open`, {});
+  toast(`Đăng nhập ${webName(m)} trong cửa sổ của tool`);
+}
 $("openGemini").onclick = async () => {
   $("openGemini").disabled = true;
-  try { await api("/api/gemini-web/open", {}); toast("Đăng nhập Gemini trong cửa sổ vừa mở"); }
+  try { await openBrowser(mode); }
   catch (e) { alert(e.message); }
   finally { $("openGemini").disabled = false; }
 };
+$("openProjectBrowser").onclick = async () => {
+  if (!project) return;
+  try { await openBrowser(project.mode); }
+  catch (e) { alert(e.message); }
+};
 
-const FIELDS = ["voice", "rate", "style", "provider", "music", "wpc", "customStyle", "extra", "musicVol"];
+const FIELDS = ["voice", "rate", "style", "music", "wpc", "customStyle", "extra", "musicVol"];
 function save() {
   const s = { mode }; FIELDS.forEach(f => s[f] = $(f).value); s.upper = $("upper").checked;
   localStorage.setItem("shorts-settings", JSON.stringify(s));
@@ -305,7 +303,7 @@ function restore() {
   $("rateVal").textContent = ($("rate").value >= 0 ? "+" : "") + $("rate").value + "%";
   $("musicVolVal").textContent = $("musicVol").value + "%";
   $("script").value = localStorage.getItem("shorts-script") || "";
-  setMode(["web", "manual", "auto"].includes(s.mode) ? s.mode : "web");
+  setMode(["web", "chatgpt"].includes(s.mode) ? s.mode : "web");
   updateStats();
 }
 
@@ -353,7 +351,7 @@ $("go").onclick = async () => {
   try {
     const job = await api("/api/jobs", {
       script, mode, title: $("title").value, style: $("style").value, custom_style: $("customStyle").value,
-      extra_direction: $("extra").value, provider: $("provider").value, ...renderOptions(),
+      extra_direction: $("extra").value, ...renderOptions(),
     });
     watch(job.id);
   } catch (e) { alert("Lỗi: " + e.message); $("go").disabled = false; }
@@ -362,8 +360,8 @@ $("go").onclick = async () => {
 $("renderBtn").onclick = async () => {
   if (!project) return;
   const have = project.scenes.filter(s => s.image).length;
-  if (project.mode === "web" && have < project.scenes.length) {
-    alert("Chưa đủ ảnh. Bấm Tiếp tục Gemini web để tạo các cảnh còn thiếu."); return;
+  if (["web", "chatgpt"].includes(project.mode) && have < project.scenes.length) {
+    alert(`Chưa đủ ảnh. Bấm Tiếp tục ${webName(project.mode)} web để tạo các cảnh còn thiếu.`); return;
   }
   if (!have) { alert("Chưa có ảnh nào. Hãy thêm ảnh cho các cảnh trước."); return; }
   if (have < project.scenes.length && !confirm(`Mới có ${have}/${project.scenes.length} ảnh. Cảnh thiếu sẽ dùng tạm ảnh cảnh bên cạnh. Vẫn dựng video?`)) return;
@@ -383,8 +381,17 @@ function watch(id) {
   $("resumeWebBtn").disabled = true; $("renderBtn").disabled = true; $("go").disabled = true;
   $("idle").style.display = "none"; $("jobBox").style.display = "block"; $("result").innerHTML = "";
   clearInterval(polling);
+  let inFlight = false;
   polling = setInterval(async () => {
-    let j; try { j = await api("/api/jobs/" + id); } catch { return; }
+    if (inFlight) return;
+    inFlight = true;
+    let j;
+    try { j = await api("/api/jobs/" + id); }
+    catch (e) {
+      $("result").innerHTML = `<div class="err">⚠️ Không cập nhật được tiến trình: ${esc(e.message)}</div>`;
+      return;
+    } finally { inFlight = false; }
+    $("result").innerHTML = "";
     $("step").textContent = j.step || "Đang chuẩn bị...";
     $("pct").textContent = Math.round(j.progress * 100) + "%";
     $("bar").style.width = (j.progress * 100) + "%";
@@ -426,8 +433,16 @@ async function openProject(pid, scroll) {
   project = await api("/api/projects/" + pid);
   $("workspace").style.display = "block";
   $("wsTitle").textContent = "📁 " + project.title;
-  $("wsGuide").style.display = project.mode === "manual" ? "" : "none";
-  $("resumeWebBtn").style.display = project.mode === "web" ? "" : "none";
+  $("resumeWebBtn").style.display = ["web", "chatgpt"].includes(project.mode) ? "" : "none";
+  $("resumeWebBtn").textContent = `🤖 Tiếp tục ${webName(project.mode)} web`;
+  $("openProjectBrowser").style.display = ["web", "chatgpt"].includes(project.mode) ? "" : "none";
+  const o = project.options;
+  ["voice", "rate", "music"].forEach(f => { if (o[f] !== undefined) $(f).value = o[f]; });
+  if (o.words_per_caption !== undefined) $("wpc").value = o.words_per_caption;
+  if (o.music_volume !== undefined) $("musicVol").value = Math.round(o.music_volume * 100);
+  if (o.uppercase !== undefined) $("upper").checked = o.uppercase;
+  $("rateVal").textContent = (+$("rate").value >= 0 ? "+" : "") + $("rate").value + "%";
+  $("musicVolVal").textContent = $("musicVol").value + "%";
   selected = -1;
   renderGrid();
   renderThumb();
@@ -482,7 +497,7 @@ function select(i) {
 async function copyText(t) {
   try { await navigator.clipboard.writeText(t); }
   catch { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
-  toast("📋 Đã copy, giờ dán vào Gemini");
+  toast("📋 Đã copy mô tả ảnh");
 }
 
 async function uploadTo(i, file) {
@@ -571,7 +586,10 @@ document.addEventListener("paste", (e) => {
 window.addEventListener("dragover", e => e.preventDefault());
 window.addEventListener("drop", e => e.preventDefault());
 
-loadOptions().then(loadHistory);
+loadOptions().then(loadHistory).then(() => {
+  const jobId = new URLSearchParams(location.search).get("job");
+  if (jobId && /^[a-f0-9]{8}$/.test(jobId)) watch(jobId);
+});
 </script>
 </body>
 </html>

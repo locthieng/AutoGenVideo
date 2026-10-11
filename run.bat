@@ -14,7 +14,7 @@ if not exist ".venv\Scripts\python.exe" (
 
 if not exist ".env" (
     copy ".env.example" ".env" >nul
-    echo Da tao file .env - hay mo file nay va dien API key.
+    echo Da tao file .env - hai che do web khong can API key.
 )
 
 echo.

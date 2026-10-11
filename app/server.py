@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.staticfiles import StaticFiles
 
-from . import config, gemini_cli, gemini_web, pipeline
+from . import config, chatgpt_web, gemini_web, pipeline
 from .pipeline import JOBS, JobOptions
 from .script_splitter import split_scenes
 
@@ -42,7 +42,7 @@ app.mount("/output", NoCacheStatic(directory=config.OUTPUT_DIR), name="output")
 
 class CreateJob(BaseModel):
     script: str
-    mode: str = "auto"
+    mode: str = "web"
     title: str = ""
     voice: str = "en-US-AndrewMultilingualNeural"
     rate: int = 10
@@ -83,10 +83,10 @@ def _err(e: Exception):
 def _require_local(request: Request) -> None:
     # Các thao tác điều khiển browser đăng nhập chỉ được gọi từ máy này.
     if not request.client or request.client.host not in ("127.0.0.1", "::1", "testclient"):
-        raise HTTPException(403, "Gemini web chỉ dùng trên máy local")
+        raise HTTPException(403, "Browser automation chỉ dùng trên máy local")
     origin = request.headers.get("origin")
     if origin and urlparse(origin).hostname not in ("127.0.0.1", "localhost", "::1"):
-        raise HTTPException(403, "Origin không được phép điều khiển Gemini browser")
+        raise HTTPException(403, "Origin không được phép điều khiển automation browser")
 
 
 @app.get("/")
@@ -96,24 +96,13 @@ def index():
 
 @app.get("/api/options")
 def options():
-    providers = []
-    if config.GEMINI_API_KEY:
-        providers.append({"id": "gemini", "name": f"Gemini API ({config.GEMINI_IMAGE_MODEL})"})
-    if config.OPENAI_API_KEY:
-        providers.append({"id": "openai", "name": f"OpenAI API ({config.OPENAI_IMAGE_MODEL})"})
-    providers.append({"id": "placeholder", "name": "Ảnh test (miễn phí, không cần key)"})
     music = sorted(p.name for p in config.MUSIC_DIR.iterdir()
                    if p.suffix.lower() in (".mp3", ".wav", ".m4a", ".ogg"))
-    default_provider = config.IMAGE_PROVIDER if any(p["id"] == config.IMAGE_PROVIDER for p in providers) \
-        else providers[0]["id"]
     return {
         "voices": [{"id": v, "name": n} for v, n in config.VOICES],
         "styles": [{"id": k, "prompt": v} for k, v in config.STYLES.items()],
-        "providers": providers,
-        "default_provider": default_provider,
-        "has_api_key": bool(config.GEMINI_API_KEY or config.OPENAI_API_KEY),
-        "gemini_cli": gemini_cli.status(),
         "gemini_web": gemini_web.status(),
+        "chatgpt_web": chatgpt_web.status(),
         "music": music,
     }
 
@@ -128,12 +117,10 @@ def create_job(req: CreateJob, request: Request):
     if not req.script.strip():
         raise HTTPException(400, "Kịch bản trống")
     o = JobOptions.from_dict(req.model_dump())
-    if o.mode not in ("manual", "auto", "web"):
+    if o.mode not in ("web", "chatgpt"):
         raise HTTPException(400, "Chế độ không hợp lệ")
-    if o.mode == "web":
-        _require_local(request)
-    job = (pipeline.start_web(o) if o.mode == "web" else
-           pipeline.start_prepare(o) if o.mode == "manual" else pipeline.start_auto(o))
+    _require_local(request)
+    job = pipeline.start_web(o)
     return job.to_dict()
 
 
@@ -147,8 +134,18 @@ def open_gemini_web(request: Request):
         _err(e)
 
 
+@app.post("/api/chatgpt-web/open")
+def open_chatgpt_web(request: Request):
+    _require_local(request)
+    try:
+        chatgpt_web.open_browser()
+        return {"ok": True}
+    except Exception as e:
+        _err(e)
+
+
 @app.post("/api/projects/{pid}/resume-web")
-def resume_gemini_web(pid: str, req: RenderReq, request: Request):
+def resume_web_project(pid: str, req: RenderReq, request: Request):
     _require_local(request)
     try:
         overrides = {k: v for k, v in req.model_dump().items() if v is not None}

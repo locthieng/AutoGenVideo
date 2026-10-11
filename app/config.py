@@ -44,6 +44,10 @@ GEMINI_WEB_PORT = int(env("GEMINI_WEB_PORT", "9223") or 9223)
 GEMINI_WEB_TIMEOUT = max(30, int(env("GEMINI_WEB_TIMEOUT", "240") or 240))
 GEMINI_WEB_LOGIN_TIMEOUT = max(30, int(env("GEMINI_WEB_LOGIN_TIMEOUT", "300") or 300))
 GEMINI_WEB_PROFILE = ROOT / ".browser-profile"
+CHATGPT_WEB_PORT = int(env("CHATGPT_WEB_PORT", "9224") or 9224)
+CHATGPT_WEB_TIMEOUT = max(30, int(env("CHATGPT_WEB_TIMEOUT", "360") or 360))
+CHATGPT_WEB_LOGIN_TIMEOUT = max(30, int(env("CHATGPT_WEB_LOGIN_TIMEOUT", "300") or 300))
+CHATGPT_WEB_PROFILE = ROOT / ".chatgpt-browser-profile"
 PORT = int(env("PORT", "8000") or 8000)
 # Thời lượng hiện ảnh thumbnail ở đầu video (giây)
 THUMB_SECONDS = max(0.0, float(env("THUMB_SECONDS", "0.5") or 0.5))
